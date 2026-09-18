@@ -1,0 +1,5 @@
+faster-whisper
+piper-tts
+sounddevice
+requests
+numpy

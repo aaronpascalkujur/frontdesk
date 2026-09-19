@@ -42,4 +42,4 @@ class Speaker:
         if shutil.which("espeak-ng"):
             subprocess.run(["espeak-ng", text], check=False)
         else:
-            print(f"[jarvis] {text}")
+            print(f"[frontdesk] {text}")

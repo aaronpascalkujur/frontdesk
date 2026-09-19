@@ -3,7 +3,7 @@ from abc import ABC, abstractmethod
 
 class BaseTool(ABC):
     """
-    Base class for all JARVIS tools.
+    Base class for all Frontdesk tools.
     Every tool must implement name, description, parameters, and execute.
     """
 

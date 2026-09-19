@@ -14,7 +14,7 @@ from .speech import Listener, Speaker
 SPOKEN_RESULT_LIMIT = 400
 
 
-class Jarvis:
+class Frontdesk:
     def __init__(self, office: MystinOffice, listener: Listener, speaker: Speaker):
         self.office = office
         self.listener = listener
@@ -24,7 +24,7 @@ class Jarvis:
 
     def say(self, text: str) -> None:
         with self._speech_lock:
-            print(f"[jarvis] {text}")
+            print(f"[frontdesk] {text}")
             self.speaker.say(text)
 
     def _dispatch(self, task: str) -> None:
@@ -73,13 +73,13 @@ class Jarvis:
         try:
             agents = self.office.agents()
         except MystinError as e:
-            print(f"[jarvis] {e}")
-            print("[jarvis] Start Mystin Office first: npm start")
+            print(f"[frontdesk] {e}")
+            print("[frontdesk] Start Mystin Office first: npm start")
             return
 
         names = ", ".join(a["name"] for a in agents)
-        print(f"[jarvis] Connected to Mystin Office. Agents: {names}")
-        self.say("Jarvis online.")
+        print(f"[frontdesk] Connected to Mystin Office. Agents: {names}")
+        self.say("Frontdesk online.")
 
         try:
             while self.turn():
@@ -89,15 +89,15 @@ class Jarvis:
 
         pending = [w for w in self._workers if w.is_alive()]
         if pending:
-            print(f"[jarvis] waiting for {len(pending)} task(s) to finish…")
+            print(f"[frontdesk] waiting for {len(pending)} task(s) to finish…")
             for w in pending:
                 w.join()
 
 
 def main() -> None:
-    print("[jarvis] loading speech models…")
-    jarvis = Jarvis(MystinOffice(), Listener(), Speaker())
-    jarvis.run()
+    print("[frontdesk] loading speech models…")
+    frontdesk = Frontdesk(MystinOffice(), Listener(), Speaker())
+    frontdesk.run()
 
 
 if __name__ == "__main__":

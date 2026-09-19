@@ -39,19 +39,35 @@ class Frontdesk:
         started = time.monotonic()
         try:
             reply = self.office.run_task("auto", task)
+            elapsed = time.monotonic() - started
+
+            agent = reply.get("agent") or "The agent"
+            filename = reply.get("file") or "a note"
+            result = str(reply.get("result") or "").strip()
+            print(f"\n[{agent} · {elapsed:.1f}s · saved to {filename}]\n{result}\n")
+
+            if not result:
+                self._announce(f"{agent} finished but sent nothing back.")
+                return
+
+            spoken = result
+            if len(spoken) > SPOKEN_RESULT_LIMIT:
+                spoken = spoken[:SPOKEN_RESULT_LIMIT].rsplit(" ", 1)[0]
+                spoken += f". That is the first part. The full answer is saved as {filename}."
+            self._announce(f"{agent} is done. {spoken}")
         except MystinError as e:
-            self.say(f"That failed. {e}")
-            return
-        elapsed = time.monotonic() - started
+            self._announce(f"That failed. {e}")
+        except Exception as e:
+            self._announce(f"That task went wrong. {type(e).__name__}: {e}")
 
-        result = reply["result"].strip()
-        print(f"\n[{reply['agent']} · {elapsed:.1f}s · saved to {reply['file']}]\n{result}\n")
-
-        spoken = result
-        if len(spoken) > SPOKEN_RESULT_LIMIT:
-            spoken = spoken[:SPOKEN_RESULT_LIMIT].rsplit(" ", 1)[0]
-            spoken += f". That is the first part. The full answer is saved as {reply['file']}."
-        self.say(f"{reply['agent']} is done. {spoken}")
+    def _announce(self, text: str) -> None:
+        """Speak from a worker thread. A dispatch must never end in silence, so a
+        broken speaker degrades to stdout instead of killing the thread."""
+        try:
+            self.say(text)
+        except Exception as e:
+            print(f"[frontdesk] {text}")
+            print(f"[frontdesk] (could not speak: {type(e).__name__}: {e})")
 
     def turn(self) -> bool:
         """Run one push-to-talk turn. Returns False when the user wants to quit."""

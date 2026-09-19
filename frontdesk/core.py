@@ -9,16 +9,24 @@ import threading
 import time
 
 from .backend import MystinError, MystinOffice
+from .chat import Chatter
 from .speech import Listener, Speaker
 
 SPOKEN_RESULT_LIMIT = 400
 
 
 class Frontdesk:
-    def __init__(self, office: MystinOffice, listener: Listener, speaker: Speaker):
+    def __init__(
+        self,
+        office: MystinOffice,
+        listener: Listener,
+        speaker: Speaker,
+        chatter: Chatter,
+    ):
         self.office = office
         self.listener = listener
         self.speaker = speaker
+        self.chatter = chatter
         self._speech_lock = threading.Lock()
         self._workers: list[threading.Thread] = []
 
@@ -63,6 +71,11 @@ class Frontdesk:
             self.say("Shutting down.")
             return False
 
+        chat = self.chatter.reply(task)
+        if chat:
+            self.say(chat)
+            return True
+
         self.say("On it.")
         worker = threading.Thread(target=self._dispatch, args=(task,), daemon=True)
         worker.start()
@@ -96,7 +109,7 @@ class Frontdesk:
 
 def main() -> None:
     print("[frontdesk] loading speech models…")
-    frontdesk = Frontdesk(MystinOffice(), Listener(), Speaker())
+    frontdesk = Frontdesk(MystinOffice(), Listener(), Speaker(), Chatter())
     frontdesk.run()
 
 

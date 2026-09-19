@@ -6,6 +6,10 @@ You speak a task. Frontdesk transcribes it on your machine, hands it to the offi
 
 ```
 Press Enter to speak, then Enter again to send.
+[heard in 210ms] "hello"
+[frontdesk] Hello. What can I get started for you?
+
+Press Enter to speak, then Enter again to send.
 [heard in 480ms] "summarize the notes from last week"
 [frontdesk] On it.
 
@@ -19,6 +23,8 @@ Last week's notes cover three threads...
 
 **Speech never leaves the machine.** Transcription is [faster-whisper](https://github.com/SYSTRAN/faster-whisper) (`base.en`, int8 on CPU) and synthesis is Piper (`piper-tts`), both running locally. A task is only sent anywhere once the office decides what to do with it — there's no cloud speech API in the path.
 
+**Small talk never reaches an agent.** Saying "hello" used to cost a full agent run — thirty seconds for a greeting. Now every turn is triaged first: a table of common openers answers instantly with no network call, and anything else goes to a fast `haiku` model that either replies conversationally or hands the turn back for dispatch. Triage is deliberately biased toward dispatch — if the model is unsure, unreachable, or slow, the task goes to the office, so a real request is never swallowed by the chat layer.
+
 **Dispatch is threaded.** `run_task` blocks until the agent finishes, which can take minutes. Frontdesk runs each dispatch on a worker thread, so you can speak a second task while the first agent is still working. A lock around `say()` keeps two finished agents from talking over each other.
 
 **Long answers are truncated out loud, not on disk.** Anything past 400 characters is cut at a word boundary when spoken, and Frontdesk tells you the filename the office wrote the full text to.
@@ -28,6 +34,7 @@ Last week's notes cover three threads...
 - Python 3.10+ (the code uses `X | None` annotations)
 - A working microphone and speakers — `sounddevice` talks to PortAudio, so on Debian/Ubuntu you may need `sudo apt install libportaudio2`
 - A Mystin Office server running at `http://127.0.0.1:4521`
+- The `claude` CLI on your `PATH` and logged in — Mystin Office already needs it, and Frontdesk shells out to it for small-talk triage. Without it, triage is skipped and every turn goes to an agent
 
 ## Setup
 
@@ -61,6 +68,7 @@ Press Enter to start recording, Enter again to send. Say "quit", "exit", "stop",
 ```
 frontdesk/
   core.py          turn loop, threaded dispatch, spoken-result truncation
+  chat.py          small-talk triage: canned openers, then fast-model fallback
   backend/
     mystin.py      HTTP client for Mystin Office (/api/agents, /api/task)
   speech/
@@ -79,3 +87,5 @@ There's no config file yet. The knobs are module constants:
 | `SAMPLE_RATE` | `speech/stt.py` | `16000` |
 | `VOICE_NAME` | `speech/tts.py` | `en_US-lessac-medium` |
 | `SPOKEN_RESULT_LIMIT` | `core.py` | `400` |
+| `TRIAGE_MODEL` | `chat.py` | `haiku` |
+| `SMALL_TALK` | `chat.py` | table of instant replies |

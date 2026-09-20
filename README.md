@@ -25,6 +25,10 @@ Last week's notes cover three threads...
 
 **Small talk never reaches an agent.** Saying "hello" used to cost a full agent run — thirty seconds for a greeting. Now every turn is triaged first: a table of common openers answers instantly with no network call, and anything else goes to a fast `haiku` model that either replies conversationally or hands the turn back for dispatch. Triage is deliberately biased toward dispatch — if the model is unsure, unreachable, or slow, the task goes to the office, so a real request is never swallowed by the chat layer.
 
+**It gets faster at what you say often.** A phrase the model had to think about once is promoted into an instant reply, so the second time costs a dict lookup instead of a round trip — measured, that's 1500ms down to 0ms. Only short phrases are kept, learned entries can never shadow a built-in, and everything lands in `state/learned_replies.json` as plain text you can read and prune by hand.
+
+**Every turn is journalled.** `state/journal.jsonl` records what was heard, how confident whisper was, which tier answered, and what the agent sent back. Nothing reads it yet; it exists so that triage and transcription can eventually be judged against what actually happened instead of guessed at.
+
 **Dispatch is threaded.** `run_task` blocks until the agent finishes, which can take minutes. Frontdesk runs each dispatch on a worker thread, so you can speak a second task while the first agent is still working. A lock around `say()` keeps two finished agents from talking over each other.
 
 **Long answers are truncated out loud, not on disk.** Anything past 400 characters is cut at a word boundary when spoken, and Frontdesk tells you the filename the office wrote the full text to.
@@ -68,12 +72,24 @@ Press Enter to start recording, Enter again to send. Say "quit", "exit", "stop",
 ```
 frontdesk/
   core.py          turn loop, threaded dispatch, spoken-result truncation
-  chat.py          small-talk triage: canned openers, then fast-model fallback
+  chat.py          small-talk triage: table, learned cache, then fast model
+  journal.py       append-only turn log + atomic JSON writes
   backend/
     mystin.py      HTTP client for Mystin Office (/api/agents, /api/task)
   speech/
     stt.py         mic capture + faster-whisper transcription
     tts.py         Piper synthesis with an espeak-ng fallback
+tests/
+  test_frontdesk.py
+state/             gitignored, created on first run
+  journal.jsonl        one record per turn
+  learned_replies.json phrases promoted out of the model path
+```
+
+Run the tests with:
+
+```bash
+python -m unittest discover tests
 ```
 
 ## Configuration
@@ -89,3 +105,10 @@ There's no config file yet. The knobs are module constants:
 | `SPOKEN_RESULT_LIMIT` | `core.py` | `400` |
 | `TRIAGE_MODEL` | `chat.py` | `haiku` |
 | `SMALL_TALK` | `chat.py` | table of instant replies |
+| `MAX_LEARNED_ENTRIES` | `chat.py` | `500` |
+| `MAX_LEARNED_WORDS` | `chat.py` | `8` |
+| `STATE_DIR` | `journal.py` | `state/` beside the package |
+
+To forget everything learned so far, delete `state/learned_replies.json`. To
+forget one bad reply, open it and remove that entry — the file is a flat map of
+phrase to answer.

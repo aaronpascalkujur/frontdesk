@@ -8,10 +8,22 @@ answers conversationally or hands the turn back for dispatch.
 import json
 import re
 import subprocess
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import NamedTuple
+
+from .journal import STATE_DIR, atomic_write_json
 
 TRIAGE_MODEL = "haiku"
 TRIAGE_TIMEOUT = 20.0
 TASK_SENTINEL = "TASK"
+
+LEARNED_PATH = STATE_DIR / "learned_replies.json"
+# A cached answer only pays off for phrases short enough to be said again
+# verbatim. Long utterances are near-unique, so caching them just grows the file.
+MAX_LEARNED_WORDS = 8
+MAX_LEARNED_CHARS = 60
+MAX_LEARNED_ENTRIES = 500
 
 _GREETING = "Hello. What can I get started for you?"
 _IDENTITY = (
@@ -85,19 +97,97 @@ def _normalize(text: str) -> str:
     return " ".join(re.sub(r"[^a-z0-9 ]", " ", stripped).split())
 
 
+class Decision(NamedTuple):
+    """`reply` is None when the turn belongs to an agent. `tier` says who decided."""
+
+    reply: str | None
+    tier: str  # table | cache | model | dispatch
+
+
+class ReplyCache:
+    """Model-decided small talk, promoted to instant replies for next time.
+
+    The expensive path answers a phrase once; every repeat is then a dict lookup.
+    Entries are plain text in a plain JSON file, so a bad one is easy to spot and
+    delete by hand.
+    """
+
+    def __init__(self, path: Path | None = None):
+        self.path = Path(path) if path else LEARNED_PATH
+        self.entries: dict[str, dict] = {}
+        self._load()
+
+    def _load(self) -> None:
+        try:
+            raw = json.loads(self.path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return  # absent or corrupt: start empty rather than fail to boot
+        if isinstance(raw, dict):
+            self.entries = {
+                k: v for k, v in raw.items() if isinstance(v, dict) and v.get("reply")
+            }
+
+    def get(self, key: str) -> str | None:
+        entry = self.entries.get(key)
+        return entry["reply"] if entry else None
+
+    def cacheable(self, key: str) -> bool:
+        return (
+            bool(key)
+            and key not in SMALL_TALK
+            and len(key) <= MAX_LEARNED_CHARS
+            and len(key.split()) <= MAX_LEARNED_WORDS
+        )
+
+    def remember(self, key: str, reply: str) -> bool:
+        """Promote a model reply. Returns whether it was kept."""
+        if not self.cacheable(key):
+            return False
+        self.entries[key] = {
+            "reply": reply,
+            "at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        }
+        if len(self.entries) > MAX_LEARNED_ENTRIES:
+            oldest = sorted(self.entries.items(), key=lambda kv: kv[1].get("at", ""))
+            for key_to_drop, _ in oldest[: len(self.entries) - MAX_LEARNED_ENTRIES]:
+                del self.entries[key_to_drop]
+        try:
+            atomic_write_json(self.path, self.entries)
+        except OSError as e:
+            print(f"[frontdesk] (could not save learned reply: {type(e).__name__}: {e})")
+        return True
+
+
 class Chatter:
     """Decides whether Frontdesk answers a turn itself."""
 
-    def __init__(self, model: str = TRIAGE_MODEL, timeout: float = TRIAGE_TIMEOUT):
+    def __init__(
+        self,
+        model: str = TRIAGE_MODEL,
+        timeout: float = TRIAGE_TIMEOUT,
+        cache: ReplyCache | None = None,
+    ):
         self.model = model
         self.timeout = timeout
+        self.cache = cache if cache is not None else ReplyCache()
 
-    def reply(self, text: str) -> str | None:
-        """Return a spoken reply for small talk, or None to dispatch to an agent."""
-        canned = SMALL_TALK.get(_normalize(text))
+    def reply(self, text: str) -> Decision:
+        """Answer small talk, or return a dispatch decision for an agent."""
+        key = _normalize(text)
+
+        canned = SMALL_TALK.get(key)
         if canned:
-            return canned
-        return self._triage(text)
+            return Decision(canned, "table")
+
+        learned = self.cache.get(key)
+        if learned:
+            return Decision(learned, "cache")
+
+        answer = self._triage(text)
+        if answer is None:
+            return Decision(None, "dispatch")
+        self.cache.remember(key, answer)
+        return Decision(answer, "model")
 
     def _triage(self, text: str) -> str | None:
         try:

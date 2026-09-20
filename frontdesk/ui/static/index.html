@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Frontdesk</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body data-state="idle">
+
+<main>
+  <section class="stage">
+    <div class="orb-wrap">
+      <canvas id="orb" width="420" height="420" aria-hidden="true"></canvas>
+      <button id="talk" class="talk" aria-label="Push to talk"></button>
+    </div>
+    <p class="state-label" id="state-label">Connecting…</p>
+    <p class="hint" id="hint">Waiting for Frontdesk</p>
+    <div class="meta">
+      <span id="agents" class="pill" hidden></span>
+      <span id="learned" class="pill" hidden></span>
+    </div>
+  </section>
+
+  <section class="feed" id="feed">
+    <header>
+      <h1>Frontdesk</h1>
+      <span class="conn" id="conn" data-live="false">offline</span>
+    </header>
+    <div class="stream" id="stream">
+      <p class="empty" id="empty">Nothing said yet. Press space to start talking.</p>
+    </div>
+  </section>
+</main>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

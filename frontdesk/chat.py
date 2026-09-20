@@ -24,6 +24,11 @@ LEARNED_PATH = STATE_DIR / "learned_replies.json"
 MAX_LEARNED_WORDS = 8
 MAX_LEARNED_CHARS = 60
 MAX_LEARNED_ENTRIES = 500
+# Whisper's avg_logprob for a turn; 0 is certain, below -1 is usually garbled.
+# A shaky transcript still gets answered, it just never reaches the cache — a
+# misheard phrase promoted once would be repeated back for good. Erring toward
+# not caching costs nothing, so this sits above the worst observed misfire.
+MIN_CACHE_CONFIDENCE = -0.75
 
 _GREETING = "Hello. What can I get started for you?"
 _IDENTITY = (
@@ -102,6 +107,7 @@ class Decision(NamedTuple):
 
     reply: str | None
     tier: str  # table | cache | model | dispatch
+    cached: bool = False
 
 
 class ReplyCache:
@@ -171,8 +177,12 @@ class Chatter:
         self.timeout = timeout
         self.cache = cache if cache is not None else ReplyCache()
 
-    def reply(self, text: str) -> Decision:
-        """Answer small talk, or return a dispatch decision for an agent."""
+    def reply(self, text: str, confidence: float | None = None) -> Decision:
+        """Answer small talk, or return a dispatch decision for an agent.
+
+        `confidence` is whisper's avg_logprob for the turn. It gates only whether
+        the answer is remembered, never whether one is given.
+        """
         key = _normalize(text)
 
         canned = SMALL_TALK.get(key)
@@ -186,8 +196,11 @@ class Chatter:
         answer = self._triage(text)
         if answer is None:
             return Decision(None, "dispatch")
-        self.cache.remember(key, answer)
-        return Decision(answer, "model")
+
+        cached = False
+        if confidence is None or confidence >= MIN_CACHE_CONFIDENCE:
+            cached = self.cache.remember(key, answer)
+        return Decision(answer, "model", cached)
 
     def _triage(self, text: str) -> str | None:
         try:

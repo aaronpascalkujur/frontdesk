@@ -27,7 +27,9 @@ Last week's notes cover three threads...
 
 **Small talk never reaches an agent.** Saying "hello" used to cost a full agent run — thirty seconds for a greeting. Now every turn is triaged first: a table of common openers answers instantly with no network call, and anything else goes to a fast `haiku` model that either replies conversationally or hands the turn back for dispatch. Triage is deliberately biased toward dispatch — if the model is unsure, unreachable, or slow, the task goes to the office, so a real request is never swallowed by the chat layer.
 
-**It gets faster at what you say often.** A phrase the model had to think about once is promoted into an instant reply, so the second time costs a dict lookup instead of a round trip — measured, that's 1500ms down to 0ms. Only short phrases are kept, learned entries can never shadow a built-in, and everything lands in `state/learned_replies.json` as plain text you can read and prune by hand.
+**It gets faster at what you say often.** A phrase the model had to think about once is promoted into an instant reply, so the second time costs a dict lookup instead of a round trip — measured on real turns, 4.9s down to 0ms. Only short phrases are kept, learned entries can never shadow a built-in, and everything lands in `state/learned_replies.json` as plain text you can read and prune by hand.
+
+**It refuses to learn from a bad transcript.** A turn whisper was unsure about still gets answered, but is never written to the cache. Without that gate a misheard phrase gets promoted once and then parroted back forever — which is exactly what happened with a clipped "how was your day" that reached the cache as "you".
 
 **Every turn is journalled.** `state/journal.jsonl` records what was heard, how confident whisper was, which tier answered, and what the agent sent back. Nothing reads it yet; it exists so that triage and transcription can eventually be judged against what actually happened instead of guessed at.
 
@@ -109,6 +111,7 @@ There's no config file yet. The knobs are module constants:
 | `SMALL_TALK` | `chat.py` | table of instant replies |
 | `MAX_LEARNED_ENTRIES` | `chat.py` | `500` |
 | `MAX_LEARNED_WORDS` | `chat.py` | `8` |
+| `MIN_CACHE_CONFIDENCE` | `chat.py` | `-0.75` |
 | `STATE_DIR` | `journal.py` | `state/` beside the package |
 
 To forget everything learned so far, delete `state/learned_replies.json`. To

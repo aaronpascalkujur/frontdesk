@@ -186,6 +186,34 @@ class TestChatterTiers(Tmp):
         self.assertEqual(d.tier, "dispatch")
         self.assertEqual(cache.entries, {})
 
+    def test_shaky_transcript_is_answered_but_not_cached(self):
+        """A misheard phrase must never be promoted, or it repeats forever."""
+        cache = self.cache()
+        c = StubChatter("Hi there, I'm Frontdesk.", cache)
+        d = c.reply("you", confidence=-0.99)  # the real-world misfire
+        self.assertEqual(d.reply, "Hi there, I'm Frontdesk.")  # still answered
+        self.assertEqual(d.tier, "model")
+        self.assertFalse(d.cached)
+        self.assertEqual(cache.entries, {})
+
+    def test_confident_transcript_is_cached(self):
+        cache = self.cache()
+        c = StubChatter("Quiet so far.", cache)
+        d = c.reply("how was your day", confidence=-0.47)
+        self.assertTrue(d.cached)
+        self.assertEqual(cache.get("how was your day"), "Quiet so far.")
+
+    def test_borderline_confidence_is_rejected(self):
+        cache = self.cache()
+        c = StubChatter("hello", cache)
+        # -0.822 was observed on a genuinely misheard turn
+        self.assertFalse(c.reply("you", confidence=-0.822).cached)
+
+    def test_missing_confidence_still_caches(self):
+        cache = self.cache()
+        c = StubChatter("Sure thing.", cache)
+        self.assertTrue(c.reply("what's new", confidence=None).cached)
+
     def test_long_chat_reply_is_answered_but_not_cached(self):
         cache = self.cache()
         c = StubChatter("Sure.", cache)

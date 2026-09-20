@@ -114,12 +114,12 @@ class Frontdesk:
             return False
 
         t0 = time.monotonic()
-        decision = self.chatter.reply(task)
+        decision = self.chatter.reply(task, heard.avg_logprob)
         triage_ms = (time.monotonic() - t0) * 1000
 
         if decision.reply:
             self.journal.write(
-                "turn", route="chat", tier=decision.tier,
+                "turn", route="chat", tier=decision.tier, cached=decision.cached,
                 triage_ms=round(triage_ms), reply=decision.reply, **entry
             )
             self.say(decision.reply)

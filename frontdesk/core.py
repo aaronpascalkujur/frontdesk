@@ -85,7 +85,7 @@ class Frontdesk:
 
     def turn(self) -> bool:
         """Run one push-to-talk turn. Returns False when the user wants to quit."""
-        input("\nPress Enter to speak, then Enter again to send. ")
+        input("\nPress Enter when you are ready to speak. ")
         audio = self.listener.record_until_enter()
 
         t0 = time.monotonic()

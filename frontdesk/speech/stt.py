@@ -29,6 +29,21 @@ class Listener:
     def __init__(self, model_size: str = MODEL_SIZE, sample_rate: int = SAMPLE_RATE):
         self.sample_rate = sample_rate
         self.model = WhisperModel(model_size, device="cpu", compute_type="int8")
+        self._warm_up()
+
+    def _warm_up(self) -> None:
+        """Open and close the mic once at startup.
+
+        The first open of a cold device costs tens of milliseconds that come out
+        of whatever the user says first. Spend it now, before anyone is talking.
+        """
+        try:
+            with sd.InputStream(
+                samplerate=self.sample_rate, channels=1, dtype="float32"
+            ):
+                pass
+        except Exception as e:  # no mic yet is not fatal; recording will say so
+            print(f"[audio] could not warm up input device: {e}", file=sys.stderr)
 
     def record_until_enter(self) -> np.ndarray:
         """Push-to-talk: capture from the default mic until the user presses Enter."""
@@ -42,6 +57,10 @@ class Listener:
         with sd.InputStream(
             samplerate=self.sample_rate, channels=1, dtype="float32", callback=callback
         ):
+            # Printed only once the device is actually live. Without a cue here
+            # there is a window where the user is already talking and nothing is
+            # being recorded, which costs the opening words of the sentence.
+            print("[listening — speak now, then press Enter]", flush=True)
             input()
 
         chunks = []

@@ -5,11 +5,13 @@ A voice front-end for [Mystin Office](https://github.com/aaronpascalkujur/mystin
 You speak a task. Frontdesk transcribes it on your machine, hands it to the office, and reads the agent's answer back when it lands.
 
 ```
-Press Enter to speak, then Enter again to send.
+Press Enter when you are ready to speak.
+[listening — speak now, then press Enter]
 [heard in 210ms] "hello"
 [frontdesk] Hello. What can I get started for you?
 
-Press Enter to speak, then Enter again to send.
+Press Enter when you are ready to speak.
+[listening — speak now, then press Enter]
 [heard in 480ms] "summarize the notes from last week"
 [frontdesk] On it.
 
@@ -65,7 +67,7 @@ Start Mystin Office first (`npm start` in that repo), then:
 python -m frontdesk
 ```
 
-Press Enter to start recording, Enter again to send. Say "quit", "exit", "stop", or "goodbye" to shut down — Frontdesk waits for any in-flight agents before exiting. Ctrl-C does the same.
+Press Enter, wait for `[listening]`, then speak and press Enter again to send. Don't start talking before the cue — the mic is not open until it appears, and a clipped opening word wrecks the transcription ("how was your day" becomes "you"). Say "quit", "exit", "stop", or "goodbye" to shut down — Frontdesk waits for any in-flight agents before exiting. Ctrl-C does the same.
 
 ## Layout
 

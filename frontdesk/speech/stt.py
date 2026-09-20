@@ -2,7 +2,7 @@
 
 import queue
 import sys
-from typing import NamedTuple
+from typing import Callable, NamedTuple
 
 import numpy as np
 import sounddevice as sd
@@ -10,6 +10,9 @@ from faster_whisper import WhisperModel
 
 SAMPLE_RATE = 16000
 MODEL_SIZE = "base.en"
+# 512 frames at 16kHz is a 32ms block, so level callbacks arrive ~31 times a
+# second — enough to animate a waveform smoothly without costing anything.
+BLOCK_SIZE = 512
 
 
 class Heard(NamedTuple):
@@ -26,8 +29,23 @@ class Heard(NamedTuple):
 
 
 class Listener:
-    def __init__(self, model_size: str = MODEL_SIZE, sample_rate: int = SAMPLE_RATE):
+    """Captures speech. Knows nothing about how the wait is signalled or drawn.
+
+    `on_open` fires the instant the stream is live and `on_level` reports input
+    amplitude while it stays open, so a frontend can show the microphone state
+    truthfully instead of guessing at it.
+    """
+
+    def __init__(
+        self,
+        model_size: str = MODEL_SIZE,
+        sample_rate: int = SAMPLE_RATE,
+        on_level: Callable[[float], None] | None = None,
+        on_open: Callable[[], None] | None = None,
+    ):
         self.sample_rate = sample_rate
+        self.on_level = on_level
+        self.on_open = on_open
         self.model = WhisperModel(model_size, device="cpu", compute_type="int8")
         self._warm_up()
 
@@ -45,23 +63,48 @@ class Listener:
         except Exception as e:  # no mic yet is not fatal; recording will say so
             print(f"[audio] could not warm up input device: {e}", file=sys.stderr)
 
-    def record_until_enter(self) -> np.ndarray:
-        """Push-to-talk: capture from the default mic until the user presses Enter."""
+    def _report(self, block: np.ndarray) -> None:
+        if self.on_level is None:
+            return
+        try:
+            rms = float(np.sqrt(np.mean(np.square(block, dtype=np.float64))))
+        except (ValueError, FloatingPointError):
+            return
+        if rms != rms:  # NaN from a device glitch
+            return
+        try:
+            self.on_level(rms)
+        except Exception:
+            self.on_level = None  # a frontend that throws is not asked again
+
+    def record_until(self, gate) -> np.ndarray:
+        """Push-to-talk: capture from the default mic until `gate.wait()` returns.
+
+        The gate is whatever ends the turn — Enter on a terminal, a click in the
+        UI. Recording stops either way, including when the gate is closed out
+        from under us during shutdown.
+        """
         frames: queue.Queue[np.ndarray] = queue.Queue()
 
         def callback(indata, _frames, _time, status):
             if status:
                 print(f"[audio] {status}", file=sys.stderr)
             frames.put(indata.copy())
+            self._report(indata)
 
         with sd.InputStream(
-            samplerate=self.sample_rate, channels=1, dtype="float32", callback=callback
+            samplerate=self.sample_rate,
+            channels=1,
+            dtype="float32",
+            blocksize=BLOCK_SIZE,
+            callback=callback,
         ):
-            # Printed only once the device is actually live. Without a cue here
+            # Announced only once the device is actually live. Without this cue
             # there is a window where the user is already talking and nothing is
             # being recorded, which costs the opening words of the sentence.
-            print("[listening — speak now, then press Enter]", flush=True)
-            input()
+            if self.on_open:
+                self.on_open()
+            gate.wait()
 
         chunks = []
         while not frames.empty():
